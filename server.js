@@ -545,14 +545,14 @@ app.get('/tl/dashboard', requireAuth, requireRole(['founder', 'tl']), async (req
                 a.punch_in_time, a.punch_in_photo, a.punch_in_latitude, a.punch_in_longitude,
                 a.punch_out_time, a.incomplete_reason, a.status, a.admin_notes
          FROM users u
-         LEFT JOIN attendance a ON u.id = a.user_id AND a.work_date = CURDATE()
+         LEFT JOIN attendance a ON u.id = a.user_id AND a.work_date = CURRENT_DATE
          WHERE u.role = 'intern'
          ORDER BY a.punch_in_time DESC, u.name ASC`
       );
 
       // Fetch today's assigned tasks
       const tasksToday = await db.query(
-        'SELECT id, assigned_to, task_description, status FROM tasks WHERE assigned_date = CURDATE()'
+        'SELECT id, assigned_to, task_description, status FROM tasks WHERE assigned_date = CURRENT_DATE'
       );
 
       // Group tasks by employee user_id
@@ -588,7 +588,7 @@ app.get('/tl/dashboard', requireAuth, requireRole(['founder', 'tl']), async (req
         `SELECT id, name, email FROM users 
          WHERE role = 'intern' 
          AND id NOT IN (
-           SELECT user_id FROM attendance WHERE work_date = CURDATE()
+           SELECT user_id FROM attendance WHERE work_date = CURRENT_DATE
          )
          ORDER BY name ASC`
       );
@@ -598,7 +598,7 @@ app.get('/tl/dashboard', requireAuth, requireRole(['founder', 'tl']), async (req
         `SELECT a.id AS attendance_id, u.name, u.email, a.punch_in_time 
          FROM attendance a
          INNER JOIN users u ON a.user_id = u.id
-         WHERE a.work_date = CURDATE() AND a.status = 'pending_punchout'
+         WHERE a.work_date = CURRENT_DATE AND a.status = 'pending_punchout'
          ORDER BY a.punch_in_time DESC`
       );
 
