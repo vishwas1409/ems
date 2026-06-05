@@ -388,7 +388,7 @@
             <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem;">
               <div>
                 <div class="ent-label">Clocked In At</div>
-                <div style="font-size: 0.875rem; font-weight: 500;"><%= new Date(attendanceToday.punch_in_time).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}) %></div>
+                <div style="font-size: 0.875rem; font-weight: 500;"><%= new Date(attendanceToday.punch_in_time).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata'}) %></div>
               </div>
               <div style="border-left: 1px solid var(--ent-border); padding-left: 1rem;">
                 <div class="ent-label">Current Session Time</div>
@@ -440,12 +440,12 @@
           <div style="display: inline-flex; align-items: center; gap: 1.5rem; margin-top: 1.5rem; padding: 1rem; background: #f9fafb; border-radius: 8px; border: 1px solid var(--ent-border);">
             <div>
               <div class="ent-label" style="margin-bottom: 0.25rem;">Clock In</div>
-              <div style="font-size: 0.875rem; font-weight: 500;"><%= new Date(attendanceToday.punch_in_time).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}) %></div>
+              <div style="font-size: 0.875rem; font-weight: 500;"><%= new Date(attendanceToday.punch_in_time).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata'}) %></div>
             </div>
             <div style="width: 1px; height: 30px; background: var(--ent-border);"></div>
             <div>
               <div class="ent-label" style="margin-bottom: 0.25rem;">Clock Out</div>
-              <div style="font-size: 0.875rem; font-weight: 500;"><%= new Date(attendanceToday.punch_out_time).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}) %></div>
+              <div style="font-size: 0.875rem; font-weight: 500;"><%= new Date(attendanceToday.punch_out_time).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata'}) %></div>
             </div>
             <% if (attendanceToday.hours_worked) { %>
             <div style="width: 1px; height: 30px; background: var(--ent-border);"></div>

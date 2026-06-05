@@ -195,11 +195,11 @@
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; font-size: 0.875rem; margin-bottom: 1rem;">
                       <div>
                         <span style="color: var(--ent-text-secondary); display: block; font-size: 0.75rem;">Punch In</span>
-                        <%= act.punch_in_time ? new Date(act.punch_in_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'N/A' %>
+                        <%= act.punch_in_time ? new Date(act.punch_in_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata'}) : 'N/A' %>
                       </div>
                       <div>
                         <span style="color: var(--ent-text-secondary); display: block; font-size: 0.75rem;">Punch Out</span>
-                        <%= act.punch_out_time ? new Date(act.punch_out_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...' %>
+                        <%= act.punch_out_time ? new Date(act.punch_out_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata'}) : '...' %>
                       </div>
                       <div>
                         <span style="color: var(--ent-text-secondary); display: block; font-size: 0.75rem;">Hours</span>
@@ -458,7 +458,7 @@
                 <div>
                   <div style="font-weight: 500; font-size: 0.875rem;"><%= session.name %></div>
                 </div>
-                <span class="ent-badge badge-blue">In: <%= new Date(session.punch_in_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) %></span>
+                <span class="ent-badge badge-blue">In: <%= new Date(session.punch_in_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata'}) %></span>
               </div>
             <% }) %>
           <% } %>
