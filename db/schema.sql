@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
   dob DATE,
   onboarding_date DATE,
   employee_id VARCHAR(50) UNIQUE,
+  designation VARCHAR(255),
+  phone_number VARCHAR(20),
   role VARCHAR(50) NOT NULL DEFAULT 'intern' CHECK (role IN ('founder', 'tl', 'intern', 'admin')),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -38,6 +40,11 @@ CREATE TABLE IF NOT EXISTS attendance (
   punch_out_time TIMESTAMP NULL,
   incomplete_reason TEXT NULL,
   hours_worked DECIMAL(5,2) NULL,
+  
+  -- Break Tracking
+  total_break_time_minutes INT DEFAULT 0,
+  current_break_start_time TIMESTAMP NULL,
+  on_break BOOLEAN DEFAULT FALSE,
   
   -- Status Override (For Admin/TL to override)
   status VARCHAR(50) DEFAULT 'pending_punchout',

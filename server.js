@@ -342,7 +342,9 @@ app.get('/dashboard', requireAuth, requireRole(['intern']), async (req, res) => 
   try {
     // 1. Fetch today's attendance log
     const logs = await db.query(
-      'SELECT * FROM attendance WHERE user_id = ? AND work_date = ?',
+      `SELECT *, 
+              EXTRACT(EPOCH FROM (NOW() - current_break_start_time)) AS active_break_seconds 
+       FROM attendance WHERE user_id = ? AND work_date = ?`,
       [userId, todayStr]
     );
     const attendanceToday = logs.length > 0 ? logs[0] : null;
@@ -357,11 +359,26 @@ app.get('/dashboard', requireAuth, requireRole(['intern']), async (req, res) => 
       }
     }
 
-    // 2. Fetch today's tasks
+    // 2. Fetch today's tasks for punch out
     const tasksToday = await db.query(
       'SELECT * FROM tasks WHERE assigned_to = ? AND assigned_date = ?',
       [userId, todayStr]
     );
+
+    // 2b. Fetch Task History with filters
+    let taskQuery = `SELECT * FROM tasks WHERE assigned_to = ?`;
+    let taskParams = [userId];
+
+    if (req.query.task_month) {
+       taskQuery += ` AND TO_CHAR(assigned_date, 'YYYY-MM') = ?`;
+       taskParams.push(req.query.task_month);
+    } else if (req.query.task_date) {
+       taskQuery += ` AND assigned_date = ?`;
+       taskParams.push(req.query.task_date);
+    }
+    taskQuery += ` ORDER BY assigned_date DESC LIMIT 50`;
+    
+    const taskHistory = await db.query(taskQuery, taskParams);
 
     // 3. Compute Streak metrics
     const currentStreak = await calculateStreak(userId);
@@ -394,6 +411,11 @@ app.get('/dashboard', requireAuth, requireRole(['intern']), async (req, res) => 
       leaveRequests,
       pendingTasksCount,
       completedTasksCount,
+      taskHistory,
+      taskFilters: {
+        date: req.query.task_date || '',
+        month: req.query.task_month || ''
+      },
       error: req.query.error || null,
       success: req.query.success || null
     });
@@ -451,7 +473,7 @@ app.post('/punch-out', requireAuth, requireRole(['intern']), async (req, res) =>
 
   try {
     const logs = await db.query(
-      "SELECT id, punch_in_time FROM attendance WHERE user_id = ? AND work_date = ? AND status = 'pending_punchout'",
+      "SELECT id, punch_in_time, on_break, current_break_start_time, total_break_time_minutes FROM attendance WHERE user_id = ? AND work_date = ? AND status = 'pending_punchout'",
       [userId, todayStr]
     );
     if (logs.length === 0) {
@@ -499,7 +521,16 @@ app.post('/punch-out', requireAuth, requireRole(['intern']), async (req, res) =>
     }
 
     await db.query(
-      `UPDATE attendance SET punch_out_time = ?, incomplete_reason = ?, status = ?, hours_worked = ? WHERE id = ?`,
+      `UPDATE attendance 
+       SET 
+         punch_out_time = ?, 
+         incomplete_reason = ?, 
+         status = ?, 
+         hours_worked = ?, 
+         total_break_time_minutes = COALESCE(total_break_time_minutes, 0) + CASE WHEN on_break AND current_break_start_time IS NOT NULL THEN ROUND(EXTRACT(EPOCH FROM (NOW() - current_break_start_time)) / 60) ELSE 0 END, 
+         on_break = FALSE, 
+         current_break_start_time = NULL 
+       WHERE id = ?`,
       [punchOutTime, incompleteReason, finalStatus, hoursWorked, attendanceId]
     );
 
@@ -507,6 +538,63 @@ app.post('/punch-out', requireAuth, requireRole(['intern']), async (req, res) =>
   } catch (err) {
     console.error('Punch out error:', err);
     res.redirect('/dashboard?error=' + encodeURIComponent('Failed to log punch out details.'));
+  }
+});
+
+// Employee: Take Break
+app.post('/take-break', requireAuth, requireRole(['intern']), async (req, res) => {
+  const userId = req.session.user.id;
+  const todayStr = formatLocalDate(new Date());
+
+  try {
+    const logs = await db.query(
+      "SELECT id, on_break FROM attendance WHERE user_id = ? AND work_date = ? AND status = 'pending_punchout'",
+      [userId, todayStr]
+    );
+    
+    if (logs.length === 0) return res.redirect('/dashboard?error=' + encodeURIComponent('No active punch-in session found.'));
+    if (logs[0].on_break) return res.redirect('/dashboard?error=' + encodeURIComponent('You are already on a break.'));
+
+    await db.query(
+      "UPDATE attendance SET on_break = TRUE, current_break_start_time = NOW() WHERE id = ?",
+      [logs[0].id]
+    );
+
+    res.redirect('/dashboard?success=' + encodeURIComponent('Break started. Enjoy your time off!'));
+  } catch (err) {
+    console.error('Take break error:', err);
+    res.redirect('/dashboard?error=' + encodeURIComponent('Failed to start break.'));
+  }
+});
+
+// Employee: End Break
+app.post('/end-break', requireAuth, requireRole(['intern']), async (req, res) => {
+  const userId = req.session.user.id;
+  const todayStr = formatLocalDate(new Date());
+
+  try {
+    const logs = await db.query(
+      "SELECT id, on_break, current_break_start_time FROM attendance WHERE user_id = ? AND work_date = ? AND status = 'pending_punchout'",
+      [userId, todayStr]
+    );
+    
+    if (logs.length === 0) return res.redirect('/dashboard?error=' + encodeURIComponent('No active punch-in session found.'));
+    if (!logs[0].on_break || !logs[0].current_break_start_time) return res.redirect('/dashboard?error=' + encodeURIComponent('You are not on a break.'));
+
+    await db.query(
+      `UPDATE attendance 
+       SET 
+         on_break = FALSE, 
+         total_break_time_minutes = COALESCE(total_break_time_minutes, 0) + ROUND(EXTRACT(EPOCH FROM (NOW() - current_break_start_time)) / 60),
+         current_break_start_time = NULL 
+       WHERE id = ?`,
+      [logs[0].id]
+    );
+
+    res.redirect('/dashboard?success=' + encodeURIComponent('Break ended. Welcome back!'));
+  } catch (err) {
+    console.error('End break error:', err);
+    res.redirect('/dashboard?error=' + encodeURIComponent('Failed to end break.'));
   }
 });
 
@@ -570,7 +658,39 @@ app.get('/tl/dashboard', requireAuth, requireRole(['founder', 'tl', 'admin']), a
     const interns = await db.query("SELECT id, name, email, dob, onboarding_date, created_at FROM users WHERE role = 'intern' ORDER BY name ASC");
     
     // 1b. Fetch ALL employees for Team Management tab
-    const allEmployees = await db.query("SELECT id, employee_id, name, email, dob, onboarding_date, role, created_at FROM users ORDER BY role ASC, name ASC");
+    const allEmployees = await db.query("SELECT id, employee_id, name, email, phone_number, dob, onboarding_date, role, designation, created_at FROM users ORDER BY role ASC, name ASC");
+
+    // 1c. Compute Celebrations for next 30 days
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const in30Days = new Date(today);
+    in30Days.setDate(today.getDate() + 30);
+    
+    let celebrations = [];
+    allEmployees.forEach(emp => {
+      // Assuming 'intern' is the main active working employee role
+      if (emp.role === 'intern' || emp.role === 'tl' || emp.role === 'admin') { 
+        if (emp.dob) {
+          let bday = new Date(emp.dob);
+          bday.setFullYear(today.getFullYear());
+          if (bday < today) bday.setFullYear(today.getFullYear() + 1);
+          if (bday >= today && bday <= in30Days) {
+            celebrations.push({ ...emp, event_type: 'Birthday', next_event_date: bday });
+          }
+        }
+        if (emp.onboarding_date) {
+          let anniv = new Date(emp.onboarding_date);
+          let joinedYear = anniv.getFullYear();
+          anniv.setFullYear(today.getFullYear());
+          if (anniv < today) anniv.setFullYear(today.getFullYear() + 1);
+          // Only show if it's actually an anniversary (not the year they joined)
+          if (anniv >= today && anniv <= in30Days && joinedYear !== anniv.getFullYear()) {
+            celebrations.push({ ...emp, event_type: 'Work Anniversary', next_event_date: anniv });
+          }
+        }
+      }
+    });
+    celebrations.sort((a, b) => a.next_event_date - b.next_event_date);
 
     // 2. Tab-specific data fetching
     let activities = [];
@@ -592,7 +712,8 @@ app.get('/tl/dashboard', requireAuth, requireRole(['founder', 'tl', 'admin']), a
       activities = await db.query(
         `SELECT a.id AS attendance_id, u.id AS user_id, u.name, u.email, 
                 a.punch_in_time, a.punch_in_photo, a.punch_in_latitude, a.punch_in_longitude,
-                a.punch_out_time, a.hours_worked, a.incomplete_reason, a.status, a.admin_notes
+                a.punch_out_time, a.hours_worked, a.incomplete_reason, a.status, a.admin_notes,
+                a.on_break, a.total_break_time_minutes, EXTRACT(EPOCH FROM (NOW() - a.current_break_start_time)) AS active_break_seconds
          FROM users u
          LEFT JOIN attendance a ON u.id = a.user_id AND a.work_date = ?
          WHERE u.role = 'intern'
@@ -616,16 +737,31 @@ app.get('/tl/dashboard', requireAuth, requireRole(['founder', 'tl', 'admin']), a
         }
       });
     } else if (activeTab === 'tasks') {
-      // Fetch entire history of assigned tasks
-      tasksList = await db.query(
-        `SELECT t.id, t.task_description, t.assigned_date, t.status, 
+      // Fetch entire history of assigned tasks with filters
+      let queryStr = `SELECT t.id, t.task_description, TO_CHAR(t.assigned_date, 'YYYY-MM-DD') AS assigned_date_str, t.status, 
                 u.name AS assignee_name, u.email AS assignee_email,
                 b.name AS assigner_name
          FROM tasks t
          INNER JOIN users u ON t.assigned_to = u.id
          INNER JOIN users b ON t.assigned_by = b.id
-         ORDER BY t.assigned_date DESC, t.id DESC`
-      );
+         WHERE 1=1`;
+      let queryParams = [];
+
+      if (req.query.emp_id) {
+        queryStr += ` AND t.assigned_to = ?`;
+        queryParams.push(req.query.emp_id);
+      }
+      if (req.query.month) {
+        queryStr += ` AND TO_CHAR(t.assigned_date, 'YYYY-MM') = ?`;
+        queryParams.push(req.query.month);
+      } else if (req.query.date) {
+        queryStr += ` AND t.assigned_date = ?`;
+        queryParams.push(req.query.date);
+      }
+
+      queryStr += ` ORDER BY t.assigned_date DESC, t.id DESC`;
+
+      tasksList = await db.query(queryStr, queryParams);
     } else if (activeTab === 'streaks') {
       // Fetch calendar and streak of the selected employee
       selectedInternId = parseInt(req.query.intern_id || (interns.length > 0 ? interns[0].id : null), 10);
@@ -697,7 +833,13 @@ app.get('/tl/dashboard', requireAuth, requireRole(['founder', 'tl', 'admin']), a
       roadblocks,
       zeroTaskReviews,
       pendingLeaves,
+      celebrations,
       targetDate: targetDateStr,
+      filters: {
+        emp_id: req.query.emp_id || '',
+        date: req.query.date || '',
+        month: req.query.month || ''
+      },
       success: req.query.success || null,
       error: req.query.error || null
     });
@@ -814,16 +956,18 @@ app.post('/tl/review-leave', requireAuth, requireRole(['founder', 'tl']), async 
 
 // TL: Add Employee
 app.post('/tl/add-employee', requireAuth, requireRole(['founder', 'tl']), async (req, res) => {
-  let { employee_id, name, email, password, dob, onboarding_date, role } = req.body;
+  let { employee_id, name, email, phone_number, password, dob, onboarding_date, role, designation } = req.body;
   
-  if (!name || !email || !password || !dob || !onboarding_date || !role || !employee_id) {
+  if (!name || !email || !password || !dob || !onboarding_date || !role || !employee_id || !designation || !phone_number) {
     return res.redirect('/tl/dashboard?tab=team&error=' + encodeURIComponent('Please provide all employee details.'));
   }
   
   email = email.toLowerCase().trim();
+  phone_number = phone_number.trim();
   password = password.trim();
   employee_id = employee_id.trim();
   role = role.toLowerCase().trim();
+  designation = designation.trim();
   
   if (!['intern', 'tl', 'admin'].includes(role)) {
     return res.redirect('/tl/dashboard?tab=team&error=' + encodeURIComponent('Invalid role designation.'));
@@ -839,8 +983,8 @@ app.post('/tl/add-employee', requireAuth, requireRole(['founder', 'tl']), async 
     const passwordHash = await bcrypt.hash(password, salt);
 
     await db.query(
-      'INSERT INTO users (employee_id, name, email, password_hash, dob, onboarding_date, role) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [employee_id, name, email, passwordHash, dob, onboarding_date, role]
+      'INSERT INTO users (employee_id, name, email, phone_number, password_hash, dob, onboarding_date, role, designation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [employee_id, name, email, phone_number, passwordHash, dob, onboarding_date, role, designation]
     );
 
     res.redirect('/tl/dashboard?tab=team&success=' + encodeURIComponent('Employee successfully added.'));
@@ -859,11 +1003,28 @@ app.post('/tl/remove-employee', requireAuth, requireRole(['founder', 'tl']), asy
   }
 
   try {
-    await db.query('DELETE FROM users WHERE id = ? AND role = ?', [employee_id, 'intern']);
+    await db.query('DELETE FROM users WHERE id = ?', [employee_id]);
     res.redirect('/tl/dashboard?tab=team&success=' + encodeURIComponent('Employee successfully removed.'));
   } catch (err) {
     console.error(err);
     res.redirect('/tl/dashboard?tab=team&error=' + encodeURIComponent('Failed to remove employee.'));
+  }
+});
+
+// TL: Update Designation
+app.post('/tl/update-designation', requireAuth, requireRole(['founder', 'tl', 'admin']), async (req, res) => {
+  let { employee_id, designation } = req.body;
+  
+  if (!employee_id || !designation) {
+    return res.redirect('/tl/dashboard?tab=team&error=' + encodeURIComponent('Employee ID and designation are required.'));
+  }
+
+  try {
+    await db.query('UPDATE users SET designation = ? WHERE id = ?', [designation.trim(), employee_id]);
+    res.redirect('/tl/dashboard?tab=team&success=' + encodeURIComponent('Designation updated successfully.'));
+  } catch (err) {
+    console.error('Update designation error:', err);
+    res.redirect('/tl/dashboard?tab=team&error=' + encodeURIComponent('Failed to update designation.'));
   }
 });
 

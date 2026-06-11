@@ -331,6 +331,7 @@
             <th>Punch In</th>
             <th>Punch Out</th>
             <th>Hours</th>
+            <th>Breaks</th>
             <th>Tasks</th>
             <th>Actions</th>
           </tr>
@@ -371,6 +372,18 @@
                 <td data-label="Punch In"><%= act.punch_in_time ? new Date(act.punch_in_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata'}) : '--:--' %></td>
                 <td data-label="Punch Out"><%= act.punch_out_time ? new Date(act.punch_out_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata'}) : '--:--' %></td>
                 <td data-label="Hours Worked" style="font-weight: 500;"><%= act.hours_worked ? parseFloat(act.hours_worked).toFixed(1) + 'h' : '-' %></td>
+                <td data-label="Breaks">
+                  <% 
+                     let breakMins = parseInt(act.total_break_time_minutes || 0, 10);
+                     if (act.on_break && act.active_break_seconds) {
+                       breakMins += Math.floor(parseInt(act.active_break_seconds, 10) / 60);
+                     }
+                  %>
+                  <%= breakMins > 0 ? breakMins + 'm' : '-' %>
+                  <% if (act.on_break) { %>
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--ent-warning); margin-left:4px;" title="Currently on break"></span>
+                  <% } %>
+                </td>
                 <td data-label="Task Progress">
                   <% let empT = employeeTasks[act.user_id] || []; %>
                   <div style="font-size: 0.75rem; color: var(--text-muted);">
@@ -449,8 +462,24 @@
   <!-- ================= TAB: TASK HISTORY ================= -->
   <% if (activeTab === 'tasks') { %>
     <div class="ent-card">
-      <div class="ent-card-header">
+      <div class="ent-card-header" style="flex-wrap: wrap; gap: 1rem;">
         <h2 class="ent-card-title">Task History <span>Consolidated view of all assignments</span></h2>
+        <form action="/tl/dashboard" method="GET" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+          <input type="hidden" name="tab" value="tasks">
+          <select name="emp_id" class="ent-input" style="width: auto; padding: 0.35rem 0.5rem; font-size: 0.8rem;">
+            <option value="">All Employees</option>
+            <% interns.forEach(i => { %>
+              <option value="<%= i.id %>" <%= filters.emp_id == i.id ? 'selected' : '' %>><%= i.name %></option>
+            <% }) %>
+          </select>
+          <input type="month" name="month" class="ent-input" style="width: auto; padding: 0.35rem 0.5rem; font-size: 0.8rem;" value="<%= filters.month %>">
+          <span style="font-size:0.8rem; color:var(--ent-text-secondary);">OR</span>
+          <input type="date" name="date" class="ent-input" style="width: auto; padding: 0.35rem 0.5rem; font-size: 0.8rem;" value="<%= filters.date %>">
+          <button type="submit" class="btn-ent btn-ent-primary btn-sm">Filter</button>
+          <% if(filters.emp_id || filters.month || filters.date) { %>
+            <a href="/tl/dashboard?tab=tasks" class="btn-ent btn-ent-outline btn-sm" style="text-decoration:none;">Clear</a>
+          <% } %>
+        </form>
       </div>
       <div class="ent-card-body" style="padding: 0;">
         <% if (tasksList.length === 0) { %>
@@ -735,19 +764,12 @@
                     <td data-label="ID" style="font-family: monospace; color: var(--ent-text-secondary);"><%= emp.employee_id %></td>
                     <td data-label="Name"><div style="font-weight: 500;"><%= emp.name %></div></td>
                     <td data-label="Designation">
-                      <% if (emp.role === 'admin') { %>
-                        <span class="ent-badge badge-blue">Admin</span>
-                      <% } else if (emp.role === 'founder') { %>
-                        <% if (emp.name.toLowerCase().includes('vishwas')) { %>
-                          <span class="ent-badge badge-purple" style="background: #e0e7ff; color: #4338ca;">Co-Founder</span>
-                        <% } else { %>
-                          <span class="ent-badge badge-purple" style="background: #e0e7ff; color: #4f46e5;">Founder</span>
-                        <% } %>
-                      <% } else if (emp.role === 'tl') { %>
-                        <span class="ent-badge badge-amber">Team Lead</span>
-                      <% } else { %>
-                        <span class="ent-badge badge-green">Intern</span>
-                      <% } %>
+                      <form action="/tl/update-designation" method="POST" style="display:flex; align-items:center; gap:0.5rem;">
+                        <input type="hidden" name="employee_id" value="<%= emp.id %>">
+                        <input type="text" name="designation" value="<%= emp.designation || (emp.role === 'tl' ? 'Team Lead' : emp.role.charAt(0).toUpperCase() + emp.role.slice(1)) %>" class="ent-input" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; width: 140px;" required>
+                        <button type="submit" class="btn-ent btn-ent-outline btn-sm" style="padding: 0.25rem 0.5rem;">Save</button>
+                      </form>
+                      <div style="font-size: 0.65rem; color: var(--ent-text-secondary); margin-top: 0.25rem;">System Role: <%= emp.role.toUpperCase() %></div>
                     </td>
                     <td data-label="Email"><%= emp.email %></td>
                     <td data-label="Joined Date"><%= emp.onboarding_date ? new Date(emp.onboarding_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A' %></td>
@@ -763,6 +785,56 @@
             </table>
           </div>
         <% } %>
+      </div>
+    </div>
+  <% } %>
+
+  <!-- ================= TAB: CELEBRATIONS ================= -->
+  <% if (activeTab === 'celebrations') { %>
+    <div class="page-header">
+      <h1>Celebrations 🎉</h1>
+      <p>Upcoming birthdays and work anniversaries for active employees (Next 30 days)</p>
+    </div>
+
+    <div class="ent-card">
+      <div class="ent-card-header">
+        <h2 class="ent-card-title">Upcoming Events</h2>
+      </div>
+      <div class="ent-card-body" style="padding: 0;">
+        <div class="ent-table-wrapper">
+          <table class="ent-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Event</th>
+                <th>Name</th>
+                <th>Employee ID</th>
+                <th>Phone Number</th>
+                <th>Email</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (celebrations.length > 0) { %>
+                <% celebrations.forEach(celeb => { %>
+                  <tr>
+                    <td style="font-weight: 600; color: var(--ent-primary);"><%= celeb.next_event_date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) %></td>
+                    <td>
+                      <span class="ent-badge <%= celeb.event_type === 'Birthday' ? 'badge-blue' : 'badge-green' %>">
+                        <%= celeb.event_type %>
+                      </span>
+                    </td>
+                    <td style="font-weight: 500;"><%= celeb.name %></td>
+                    <td style="font-family: monospace; color: var(--ent-text-secondary);"><%= celeb.employee_id %></td>
+                    <td><%= celeb.phone_number || 'N/A' %></td>
+                    <td><%= celeb.email %></td>
+                  </tr>
+                <% }) %>
+              <% } else { %>
+                <tr><td colspan="6" style="text-align:center; color: var(--text-muted); padding: 3rem;">No upcoming celebrations in the next 30 days.</td></tr>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   <% } %>
@@ -808,7 +880,7 @@
             <input type="text" name="employee_id" class="ent-input" placeholder="e.g. EMP-101" required>
           </div>
           <div>
-            <label class="ent-label">Designation</label>
+            <label class="ent-label">System Access Role</label>
             <select name="role" class="ent-input" required>
               <option value="intern">Intern</option>
               <option value="tl">Team Lead</option>
@@ -817,12 +889,20 @@
           </div>
         </div>
         <div style="margin-bottom: 1rem;">
+          <label class="ent-label">Designation (Job Title)</label>
+          <input type="text" name="designation" class="ent-input" placeholder="e.g. Backend Developer" required>
+        </div>
+        <div style="margin-bottom: 1rem;">
           <label class="ent-label">Full Name</label>
           <input type="text" name="name" class="ent-input" required>
         </div>
         <div style="margin-bottom: 1rem;">
           <label class="ent-label">Email Address</label>
           <input type="email" name="email" class="ent-input" autocapitalize="none" autocorrect="off" required>
+        </div>
+        <div style="margin-bottom: 1rem;">
+          <label class="ent-label">Phone Number</label>
+          <input type="text" name="phone_number" class="ent-input" placeholder="e.g. +91 9876543210" required>
         </div>
         <div style="margin-bottom: 1rem;">
           <label class="ent-label">Password</label>

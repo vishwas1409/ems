@@ -45,8 +45,11 @@ async function getPool() {
       // Auto-migrate to add missing columns
       try {
         await pool.query("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS hours_worked DECIMAL(5,2) NULL");
+        await pool.query("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS total_break_time_minutes INT DEFAULT 0");
+        await pool.query("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS current_break_start_time TIMESTAMP NULL");
+        await pool.query("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS on_break BOOLEAN DEFAULT FALSE");
       } catch (err) {
-        console.error("Migration warning (hours_worked):", err.message);
+        console.error("Migration warning:", err.message);
       }
       
       console.log('PostgreSQL database connection pool and schema initialized.');

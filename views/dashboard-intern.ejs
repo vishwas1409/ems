@@ -167,6 +167,9 @@
   .btn-ent-danger { background: var(--ent-danger); color: #ffffff !important; }
   .btn-ent-danger:hover { background: #b91c1c; }
 
+  .btn-ent-warning { background: #f59e0b; color: #ffffff !important; }
+  .btn-ent-warning:hover { background: #d97706; }
+
   .btn-ent-outline {
     background: #ffffff;
     border: 1px solid #d1d5db;
@@ -397,6 +400,15 @@
                 <div class="ent-label">Current Session Time</div>
                 <div style="font-size: 0.875rem; font-weight: 500;" id="sessionTime">Calculating...</div>
               </div>
+              <div style="border-left: 1px solid var(--ent-border); padding-left: 1rem;">
+                <div class="ent-label">Total Break Time</div>
+                <div style="font-size: 0.875rem; font-weight: 500;" id="breakTimeDisplay">
+                  <span id="staticBreakTime"><%= attendanceToday.total_break_time_minutes || 0 %> mins</span>
+                  <% if (attendanceToday.on_break) { %>
+                    <span id="activeBreakTimer" style="color: #d97706; margin-left: 0.25rem;"></span>
+                  <% } %>
+                </div>
+              </div>
             </div>
 
             <div class="ent-label" style="margin-bottom: 0.5rem;">Task Checklist</div>
@@ -422,12 +434,19 @@
             <% } %>
           </div>
           
-          <div class="ent-card-footer">
+          <div class="ent-card-footer" style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+            <% if (attendanceToday.on_break) { %>
+              <button type="submit" form="endBreakForm" class="btn-ent btn-ent-warning">End Break</button>
+            <% } else { %>
+              <button type="submit" form="takeBreakForm" class="btn-ent btn-ent-outline">Take Break</button>
+            <% } %>
             <button type="submit" class="btn-ent btn-ent-danger">
               End Work Day
             </button>
           </div>
         </form>
+        <form id="takeBreakForm" action="/take-break" method="POST" style="display:none;"></form>
+        <form id="endBreakForm" action="/end-break" method="POST" style="display:none;"></form>
       </div>
 
     <% } else { %>
@@ -461,6 +480,39 @@
         </div>
       </div>
     <% } %>
+
+    <!-- TASK HISTORY & FILTER -->
+    <div class="ent-card">
+      <div class="ent-card-header" style="flex-wrap: wrap; gap: 1rem;">
+        <h2 class="ent-card-title">Task History</h2>
+        <form action="/dashboard" method="GET" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+          <input type="month" name="task_month" class="ent-input" style="width: auto; padding: 0.35rem 0.5rem; font-size: 0.8rem;" value="<%= taskFilters.month %>">
+          <span style="font-size:0.8rem; color:var(--ent-text-secondary);">OR</span>
+          <input type="date" name="task_date" class="ent-input" style="width: auto; padding: 0.35rem 0.5rem; font-size: 0.8rem;" value="<%= taskFilters.date %>">
+          <button type="submit" class="btn-ent btn-ent-primary btn-sm">Filter</button>
+          <% if(taskFilters.month || taskFilters.date) { %>
+            <a href="/dashboard" class="btn-ent btn-ent-outline btn-sm" style="text-decoration:none;">Clear</a>
+          <% } %>
+        </form>
+      </div>
+      <div class="ent-card-body" style="padding: 0;">
+        <% if (taskHistory.length === 0) { %>
+          <div style="padding: 2rem; text-align: center; color: var(--ent-text-secondary); font-size: 0.875rem;">No tasks found.</div>
+        <% } else { %>
+          <div class="ent-task-list" style="border: none; border-radius: 0;">
+            <% taskHistory.forEach(task => { %>
+              <div class="ent-task-item" style="justify-content: space-between;">
+                <div>
+                  <span class="ent-task-text"><%= task.task_description %></span>
+                  <div style="font-size: 0.75rem; color: var(--ent-text-secondary); margin-top: 0.25rem;">Assigned: <%= new Date(task.assigned_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) %></div>
+                </div>
+                <span class="ent-badge <%= task.status === 'completed' ? 'badge-green' : 'badge-amber' %>"><%= task.status %></span>
+              </div>
+            <% }) %>
+          </div>
+        <% } %>
+      </div>
+    </div>
 
     <!-- LEAVE REQUESTS -->
     <div class="ent-card">
@@ -622,6 +674,24 @@
       const el = document.getElementById('sessionTime');
       if(el) el.innerText = `${hrs}h ${mins}m ${secs}s`;
     }, 1000);
+
+    <% if (attendanceToday.on_break) { %>
+      let activeBreakSeconds = parseInt("<%= attendanceToday.active_break_seconds || 0 %>", 10);
+      const staticTotalBreak = parseInt("<%= attendanceToday.total_break_time_minutes || 0 %>", 10);
+      setInterval(() => {
+        activeBreakSeconds++;
+        const currentBreakMins = Math.floor(activeBreakSeconds / 60);
+        const totalBreakNow = staticTotalBreak + currentBreakMins;
+        
+        const staticEl = document.getElementById('staticBreakTime');
+        const activeEl = document.getElementById('activeBreakTimer');
+        if (staticEl) staticEl.innerText = `${totalBreakNow} mins`;
+        if (activeEl) {
+          const secs = activeBreakSeconds % 60;
+          activeEl.innerText = `(Active: ${currentBreakMins}m ${secs}s)`;
+        }
+      }, 1000);
+    <% } %>
   <% } %>
 
   // ===== CAMERA & GEO LOGIC =====
